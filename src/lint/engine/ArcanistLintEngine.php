@@ -203,22 +203,35 @@ abstract class ArcanistLintEngine extends Phobject {
 
     $this->stopped = array();
 
-    $exceptions = $this->executeLinters($runnable);
-
-    foreach ($runnable as $linter) {
-      foreach ($linter->getLintMessages() as $message) {
-        $this->validateLintMessage($linter, $message);
-
-        if (!$this->isSeverityEnabled($message->getSeverity())) {
-          continue;
-        }
-        if (!$this->isRelevantMessage($message)) {
-          continue;
-        }
-        $message->setGranularity($linter->getCacheGranularity());
-        $result = $this->getResultForPath($message->getPath());
-        $result->addMessage($message);
+    $formatters = array();
+    $non_formatters = array();
+    foreach ($runnable as $key => $linter) {
+      if ($linter->getFormatter()) {
+        $formatters[$key] = $linter;
+      } else {
+        $non_formatters[$key] = $linter;
       }
+    }
+
+    $exceptions = array();
+
+    if ($formatters) {
+      $formatter_exceptions = $this->executeLinters($formatters);
+      if (is_array($formatter_exceptions)) {
+        $exceptions = array_merge($exceptions, $formatter_exceptions);
+      }
+
+      $this->runLinters($formatters);
+    }
+
+
+    if ($non_formatters) {
+      $non_formatter_exceptions = $this->executeLinters($non_formatters);
+      if (is_array($non_formatter_exceptions)) {
+        $exceptions = array_merge($exceptions, $non_formatter_exceptions);
+      }
+
+      $this->runLinters($non_formatters);
     }
 
     if ($this->cachedResults) {
@@ -623,6 +636,24 @@ abstract class ArcanistLintEngine extends Phobject {
           'Linter "%s" generated a lint message that is invalid because it '.
           'does not have a name. Lint messages must have a name.',
           get_class($linter)));
+    }
+  }
+
+  private function runLinters(array $linters) {
+    foreach ($linters as $linter) {
+      foreach ($linter->getLintMessages() as $message) {
+        $this->validateLintMessage($linter, $message);
+
+        if (!$this->isSeverityEnabled($message->getSeverity())) {
+          continue;
+        }
+        if (!$this->isRelevantMessage($message)) {
+          continue;
+        }
+        $message->setGranularity($linter->getCacheGranularity());
+        $result = $this->getResultForPath($message->getPath());
+        $result->addMessage($message);
+      }
     }
   }
 
